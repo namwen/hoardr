@@ -1,5 +1,7 @@
+require 'digest'
 require 'zip'
 require 'flickraw'
+require 'open-uri'
 
 class Hoardr 
 	attr_accessor :flickr_api_key
@@ -13,12 +15,31 @@ class Hoardr
 
 		@flickr_api_key = flickr_api_key 
 		@flickr_api_secret = flickr_api_secret
-
-		@MAX_SIZE = 8 - (File.size(gif_path).to_f / 2**20)
+		@MAX_SIZE = 200 - (File.size(gif_path).to_f / 2**20)
 
 		@filesizes = {}
+		setup_flickr
 	end
 
+	def setup_flickr
+		FlickRaw.api_key = @flickr_api_key
+		FlickRaw.shared_secret = @flickr_api_secret
+		if File.exists?('flickr-tokens.txt')
+			line = nil
+			File.open('flickr-tokens.txt', 'r'){ |file| line = file.readline }
+			tokens = line.split
+			flickr.access_token = tokens[0]
+			flickr.access_secret = tokens[1]
+		else
+			token = flickr.get_request_token
+			auth_url = flickr.get_authorize_url(token['oauth_token'], :perms => 'delete')
+			puts "navigate to this url to authorize: "
+			puts auth_url
+			puts "enter confirmation #: "
+			verify = gets.strip
+		 	flickr.get_access_token(token['oauth_token'], token['oauth_token_secret'], verify)
+		end
+	end
 
 	# build hash of filenames mapped to their size in megabytes
 	def build_filesizes
@@ -29,6 +50,7 @@ class Hoardr
 			@filesizes[file] = filesize
 		end
 	end
+	
 	# returns 200mb block of files
 	# array of files whose cumulative sizes are under the max_upload_size
 	def accumulate_files
@@ -68,26 +90,9 @@ class Hoardr
 	
 	# takes the combined image and uploads it to flickr
 	# returns the id of the uploaded image, to be used for data logging
-	def do_upload(combined_image, title='stuffr-backup')
-		FlickRaw.api_key = @flickr_api_key
-		FlickRaw.shared_secret = @flickr_api_secret
-		if File.exists?('flickr-tokens.txt')
-			line = nil
-			File.open('flickr-tokens.txt', 'r'){ |file| line = file.readline }
-			tokens = line.split
-			flickr.access_token = tokens[0]
-			flickr.access_secret = tokens[1]
-		else
-			token = flickr.get_request_token
-			auth_url = flickr.get_authorize_url(token['oauth_token'], :perms => 'delete')
-			puts "navigate to this url to authorize: "
-			puts auth_url
-			puts "enter confirmation #: "
-			verify = gets.strip
-		 	flickr.get_access_token(token['oauth_token'], token['oauth_token_secret'], verify)
-		end
+	def do_upload(combined_image, title='stuffr-backup', tags)
 		begin
-			return flickr.upload_photo(combined_image, :title => title, :is_public => 0)
+			return flickr.upload_photo(combined_image, :title => title, :tags => tags, :is_public => 0)
 		rescue FlickRaw::FailedResponse => e
 		  puts "Authentication failed : #{e.msg}"
 		end
@@ -96,20 +101,37 @@ class Hoardr
 	def run_backup
 		build_filesizes
 		files_to_backup = accumulate_files
-		i = 0
 		ids = []
 		until files_to_backup.empty? do
-			puts i
 			create_archive(files_to_backup)
 			combined_file = build_backup
-			ids << do_upload(@destination_path+'/'+combined_file+'.gif',combined_file )
+			hashed_filenames = files_to_backup.map{|file| Digest::SHA1.hexdigest(file)}
+			archive_id = do_upload(@destination_path+'/'+combined_file+'.gif',combined_file, hashed_filenames.join(" ") )
+			log_archive(archive_id, hashed_filenames, files_to_backup)
+			ids << archive_id
 			files_to_backup = accumulate_files
-			i+=1
 		end
 		puts "uploads complete"
 		puts ids
 	end
-end
 
-hoardr = Hoardr.new('SOURCH_PATH', 'DESTINATION_PATH','GIF_PATH','API_KEY','API_SECRET')
-hoardr.run_backup
+	def log_archive(archive_id, hashed_filenames, raw_filenames)
+		File.open('hoardr-archive.txt', 'a') do |archive_log|
+			archive_log.write("archive-#{archive_id}-#{hashed_filenames.length}\n")
+			hashed_filenames.each_with_index do |f, i|
+				archive_log.write('hash: '+f+' name: '+raw_filenames[i]+"\n")
+			end
+			archive_log.write("\n")
+		end
+	end
+
+	def download_archive(archive_id)
+		info = flickr.photos.getInfo(:photo_id => archive_id)
+		photo_url = FlickRaw.url_o(info)
+		open("#{archive_id}.gif", 'wb') do |file|
+			file << open(photo_url).read
+		end
+		system("mv #{archive_id}.gif #{archive_id}.zip | unzip #{archive_id}.zip -d #{archive_id}")
+	end
+
+end
