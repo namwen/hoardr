@@ -170,7 +170,7 @@ class Hoardr
 		end
 	end
 	
-	# retrieves a single archived file
+	# retrieves a single archived file 
 	def download_raw_file(filename)
 		return unless file_is_archived?(filename)
 		archive_id = get_file_archive_id(filename)
