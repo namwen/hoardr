@@ -6,7 +6,7 @@ require 'gibberish'
 require 'shellwords'
 
 class Hoardr 
-	attr_accessor :flickr_api_key
+  attr_accessor :flickr_api_key
 	attr_accessor :flickr_api_secret
 	ARCHIVE_FILE = "hoardr_archive.zip"
 	
@@ -29,7 +29,7 @@ class Hoardr
 		if File.exists?('flickr-tokens.txt')
 			line = nil
 			File.open('flickr-tokens.txt', 'r'){ |file| line = file.readline }
-			tokens = line.split
+		  tokens = line.split
 			flickr.access_token = tokens[0]
 			flickr.access_secret = tokens[1]
 		else
