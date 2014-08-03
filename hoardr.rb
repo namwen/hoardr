@@ -79,7 +79,18 @@ class Hoardr
 			system("rm %s" % Shellwords.escape(file))
 		end
 	end
-	
+
+	# retrieves a single archived file 
+	def download_raw_file(filename)
+		return unless file_is_archived?(filename)
+		archive_id = get_file_archive_id(filename)
+		download_archive(archive_id)
+		if( File.directory?(@destination_path+"downloaded_files/"))
+			system("cp #{archive_id}/#{filename} ../downloaded_files")
+		else
+			system("mkdir #{destination_path}downloaded_files | cp #{archive_id}/#{filename} #{@destination_path}downloaded_files")
+		end
+	end
 
 	def retrieve_archived_file(filename)
 		download_raw_file(filename)
